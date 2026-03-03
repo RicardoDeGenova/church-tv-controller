@@ -7,6 +7,7 @@ from typing import Callable
 from models import TVConfig, TVStatus, TVState, ActionResult
 from config_loader import load_config, ConfigError, AppConfig
 from tv_service import execute_on_multiple_tvs
+from settings_page import SettingsWindow
 
 
 class Colors:
@@ -109,15 +110,32 @@ class ChurchTVController:
         self.root.geometry(f"+{x}+{y}")
 
     def build_ui(self) -> None:
+        title_frame = tk.Frame(self.root, bg=Colors.BACKGROUND)
+        title_frame.pack(fill="x")
+
         title_label = tk.Label(
-            self.root,
+            title_frame,
             text="Waves TV Controller",
             font=("Arial", 18, "bold"),
             fg=Colors.FOREGROUND,
             bg=Colors.BACKGROUND,
             pady=15
         )
-        title_label.pack(fill="x")
+        title_label.pack(side="left", fill="x", expand=True)
+
+        self.settings_btn = tk.Button(
+            title_frame,
+            text="\u2699",
+            font=("Arial", 16),
+            bg=Colors.BACKGROUND,
+            fg=Colors.FOREGROUND,
+            activebackground=Colors.BACKGROUND,
+            activeforeground="#AAAAAA",
+            relief="flat",
+            bd=0,
+            command=self.open_settings
+        )
+        self.settings_btn.pack(side="right", padx=(0, 15))
 
         tv_container = tk.Frame(self.root, bg=Colors.BACKGROUND)
         tv_container.pack(fill="both", expand=True, padx=20, pady=10)
@@ -278,6 +296,7 @@ class ChurchTVController:
             self.all_on_btn,
             self.all_off_btn,
             self.check_status_btn,
+            self.settings_btn,
         ]
 
     def disable_all_buttons(self) -> None:
@@ -403,6 +422,23 @@ class ChurchTVController:
             "Checking all TV statuses...",
             "Status check complete"
         )
+
+    def open_settings(self) -> None:
+        if self.is_operation_running:
+            return
+        SettingsWindow(self.root, self.config, self.reload_config)
+
+    def reload_config(self, new_config: AppConfig) -> None:
+        for job_id in self.reset_jobs.values():
+            self.root.after_cancel(job_id)
+        self.reset_jobs.clear()
+        self.indicators.clear()
+
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        self.config = new_config
+        self.build_ui()
 
     def run(self) -> None:
         self.root.mainloop()

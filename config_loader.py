@@ -74,6 +74,26 @@ def parse_tv_list(tv_list: list, group_name: str) -> list[TVConfig]:
     return result
 
 
+def serialize_tv_config(tv: TVConfig) -> dict:
+    data = {"name": tv.name, "ip": tv.ip}
+    if tv.protocol != "adb":
+        data["protocol"] = tv.protocol
+    if tv.mac:
+        data["mac"] = tv.mac
+    return data
+
+
+def save_config(config: AppConfig) -> None:
+    data = {
+        "adb_port": config.adb_port,
+        "inside_tvs": [serialize_tv_config(tv) for tv in config.inside_tvs],
+        "outside_tvs": [serialize_tv_config(tv) for tv in config.outside_tvs],
+    }
+    config_path = get_config_path()
+    with open(config_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
 def load_config() -> AppConfig:
     config_path = get_config_path()
 
