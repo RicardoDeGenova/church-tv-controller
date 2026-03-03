@@ -40,6 +40,19 @@ def get_token_for_ip(ip: str) -> dict:
     return tokens.get(ip, {})
 
 
+WEBOS_PORT = 3000
+
+
+def is_tv_reachable(ip: str, timeout: int = 3) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            sock.connect((ip, WEBOS_PORT))
+        return True
+    except (socket.timeout, OSError):
+        return False
+
+
 def send_wol_packet(mac_address: str) -> bool:
     try:
         mac_bytes = bytes.fromhex(mac_address.replace(":", "").replace("-", ""))
@@ -52,20 +65,21 @@ def send_wol_packet(mac_address: str) -> bool:
         return False
 
 
-def connect_to_webos_tv(ip: str) -> tuple[WebOSClient | None, str]:
+def connect_to_webos_tv(ip: str, timeout: int = 60) -> tuple[WebOSClient | None, str]:
     store = get_token_for_ip(ip)
 
     try:
         client = WebOSClient(ip)
         client.connect()
 
-        for status in client.register(store):
+        prompted = False
+        for status in client.register(store, timeout=timeout):
             if status == WebOSClient.PROMPTED:
-                save_token_for_ip(ip, store)
-                return None, "Accept prompt on TV"
+                prompted = True
             elif status == WebOSClient.REGISTERED:
                 save_token_for_ip(ip, store)
-                return client, "Connected"
+                msg = "Connected (accepted prompt)" if prompted else "Connected"
+                return client, msg
 
         return None, "Registration failed"
 
@@ -77,13 +91,6 @@ def check_single_tv(config: TVConfig) -> TVStatus:
     client, message = connect_to_webos_tv(config.ip)
 
     if client is None:
-        if "Accept prompt" in message:
-            return TVStatus(
-                name=config.name,
-                ip=config.ip,
-                state=TVState.UNKNOWN,
-                message=message
-            )
         return TVStatus(
             name=config.name,
             ip=config.ip,
@@ -92,7 +99,7 @@ def check_single_tv(config: TVConfig) -> TVStatus:
         )
 
     try:
-        client.disconnect()
+        client.close()
     except Exception:
         pass
 
@@ -114,28 +121,13 @@ def turn_on_single_tv(config: TVConfig) -> TVStatus:
             message="No MAC address configured for Wake-on-LAN"
         )
 
-    client, message = connect_to_webos_tv(config.ip)
-
-    if client is not None:
-        try:
-            client.disconnect()
-        except Exception:
-            pass
+    if is_tv_reachable(config.ip):
         return TVStatus(
             name=config.name,
             ip=config.ip,
             state=TVState.AWAKE,
             action_result=ActionResult.SKIPPED,
             message="Already on"
-        )
-
-    if "Accept prompt" in message:
-        return TVStatus(
-            name=config.name,
-            ip=config.ip,
-            state=TVState.UNKNOWN,
-            action_result=ActionResult.FAILED,
-            message=message
         )
 
     wol_success = send_wol_packet(config.mac)
@@ -162,14 +154,6 @@ def turn_off_single_tv(config: TVConfig) -> TVStatus:
     client, message = connect_to_webos_tv(config.ip)
 
     if client is None:
-        if "Accept prompt" in message:
-            return TVStatus(
-                name=config.name,
-                ip=config.ip,
-                state=TVState.UNKNOWN,
-                action_result=ActionResult.FAILED,
-                message=message
-            )
         return TVStatus(
             name=config.name,
             ip=config.ip,
@@ -183,7 +167,7 @@ def turn_off_single_tv(config: TVConfig) -> TVStatus:
         system.power_off()
     except Exception as e:
         try:
-            client.disconnect()
+            client.close()
         except Exception:
             pass
         return TVStatus(
@@ -195,7 +179,7 @@ def turn_off_single_tv(config: TVConfig) -> TVStatus:
         )
 
     try:
-        client.disconnect()
+        client.close()
     except Exception:
         pass
 
